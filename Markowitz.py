@@ -62,10 +62,13 @@ class EqualWeightPortfolio:
         """
         TODO: Complete Task 1 Below
         """
-
+        num_assets = len(assets)
+        equal_weight = 1.0 / num_assets
+        self.portfolio_weights[assets] = equal_weight
         """
         TODO: Complete Task 1 Above
         """
+
         self.portfolio_weights.ffill(inplace=True)
         self.portfolio_weights.fillna(0, inplace=True)
 
@@ -113,9 +116,26 @@ class RiskParityPortfolio:
         """
         TODO: Complete Task 2 Below
         """
-
-
-
+        # 從 lookback 期之後開始遍歷每一天
+        for i in range(self.lookback + 1, len(df)):
+            # 獲取當前日期
+            current_date = df.index[i]
+            
+            # 獲取過去 lookback 期間的報酬率數據
+            # iloc[i-self.lookback : i] 取的是不包含 i 的前 lookback 筆資料
+            window_returns = df_returns[assets].iloc[i - self.lookback : i]
+            
+            # 計算波動率 (標準差 sigma)
+            sigmas = window_returns.std()
+            
+            # 計算倒數波動率 (1/sigma)
+            inv_sigmas = 1.0 / sigmas
+            
+            # 歸一化：權重 = (1/sigma) / sum(1/sigma)
+            weights = inv_sigmas / inv_sigmas.sum()
+            
+            # 將計算出的權重填入當前日期
+            self.portfolio_weights.loc[current_date, assets] = weights
         """
         TODO: Complete Task 2 Above
         """
@@ -187,12 +207,25 @@ class MeanVariancePortfolio:
                 """
                 TODO: Complete Task 3 Below
                 """
+                # 定義決策變數 w (權重向量)
+                # lb=0.0 滿足 long-only constraint (w >= 0)
+                # ub=1.0 權重不超過 1
+                w = model.addMVar(n, lb=0.0, ub=1.0, name="w")
 
-                # Sample Code: Initialize Decision w and the Objective
-                # NOTE: You can modify the following code
-                w = model.addMVar(n, name="w", ub=1)
-                model.setObjective(w.sum(), gp.GRB.MAXIMIZE)
+                # 定義風險項 (Variance term): w.T * Sigma * w
+                # Gurobi 的 MVar 支援矩陣乘法 (@)
+                risk_term = w @ Sigma @ w
 
+                # 定義預期報酬項 (Return term): w.T * mu
+                return_term = mu @ w
+
+                # 設定目標函數: Maximize (Return - (gamma/2) * Risk)
+                # 注意：題目公式為 max，故這裡設為 GP.GRB.MAXIMIZE
+                objective = return_term - 0.5 * gamma * risk_term
+                model.setObjective(objective, gp.GRB.MAXIMIZE)
+
+                # 加入限制條件: 權重總和為 1 (sum(w) = 1)
+                model.addConstr(w.sum() == 1, "budget")
                 """
                 TODO: Complete Task 3 Above
                 """
